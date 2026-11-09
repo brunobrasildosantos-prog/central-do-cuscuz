@@ -130,7 +130,7 @@ jobs:
           XEOF
           cat > $A/java/br/com/comanda/cuscuz/MainActivity.java <<'XEOF'
           package br.com.comanda.cuscuz;
-          
+
           import android.app.Activity;
           import android.app.PendingIntent;
           import android.content.Intent;
@@ -144,28 +144,29 @@ jobs:
           import android.os.Bundle;
           import android.util.Base64;
           import android.view.WindowManager;
+          import android.widget.Toast;
           import android.webkit.JavascriptInterface;
           import android.webkit.WebResourceRequest;
           import android.webkit.WebResourceResponse;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
-          
+
           import androidx.webkit.WebViewAssetLoader;
-          
+
           public class MainActivity extends Activity {
               private static final String ACTION_USB = "br.com.comanda.cuscuz.USB_PERMISSION";
               private static final String START = "https://appassets.androidplatform.net/assets/index.html";
               private WebView web;
               private UsbManager usb;
-          
+
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                   if (Build.VERSION.SDK_INT >= 21) getWindow().setStatusBarColor(0xFFB8770B);
                   usb = (UsbManager) getSystemService(USB_SERVICE);
-          
+
                   web = new WebView(this);
                   setContentView(web);
                   WebSettings s = web.getSettings();
@@ -173,17 +174,17 @@ jobs:
                   s.setDomStorageEnabled(true);
                   s.setDatabaseEnabled(true);
                   s.setMediaPlaybackRequiresUserGesture(false);
-          
+
                   final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                           .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                           .build();
-          
+
                   web.setWebViewClient(new WebViewClient() {
                       @Override
                       public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                           return loader.shouldInterceptRequest(request.getUrl());
                       }
-          
+
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                           String u = request.getUrl().toString();
@@ -202,19 +203,19 @@ jobs:
                   if (savedInstanceState != null) web.restoreState(savedInstanceState);
                   else web.loadUrl(START);
               }
-          
+
               @Override
               protected void onSaveInstanceState(Bundle outState) {
                   super.onSaveInstanceState(outState);
                   web.saveState(outState);
               }
-          
+
               @Override
               public void onBackPressed() {
                   if (web.canGoBack()) web.goBack();
                   else super.onBackPressed();
               }
-          
+
               private UsbEndpoint findOut(UsbInterface itf) {
                   for (int e = 0; e < itf.getEndpointCount(); e++) {
                       UsbEndpoint ep = itf.getEndpoint(e);
@@ -222,23 +223,63 @@ jobs:
                   }
                   return null;
               }
-          
+
               private UsbDevice findPrinter() {
+                  UsbDevice any = null;
                   for (UsbDevice d : usb.getDeviceList().values()) {
                       for (int i = 0; i < d.getInterfaceCount(); i++) {
-                          if (findOut(d.getInterface(i)) != null) return d;
+                          UsbInterface itf = d.getInterface(i);
+                          if (findOut(itf) == null) continue;
+                          if (itf.getInterfaceClass() == UsbConstants.USB_CLASS_PRINTER) return d;
+                          if (any == null) any = d;
                       }
                   }
-                  return null;
+                  return any;
               }
-          
+
+              private UsbInterface pickInterface(UsbDevice d) {
+                  UsbInterface fallback = null;
+                  for (int i = 0; i < d.getInterfaceCount(); i++) {
+                      UsbInterface x = d.getInterface(i);
+                      if (findOut(x) == null) continue;
+                      if (x.getInterfaceClass() == UsbConstants.USB_CLASS_PRINTER) return x;
+                      if (fallback == null) fallback = x;
+                  }
+                  return fallback;
+              }
+
+              private void toast(final String msg) {
+                  runOnUiThread(new Runnable() {
+                      @Override
+                      public void run() {
+                          Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
+                      }
+                  });
+              }
+
+              private String describe(UsbDevice d) {
+                  StringBuilder b = new StringBuilder();
+                  b.append("VID ").append(d.getVendorId()).append(" PID ").append(d.getProductId()).append(" | ");
+                  for (int i = 0; i < d.getInterfaceCount(); i++) {
+                      UsbInterface x = d.getInterface(i);
+                      b.append("if").append(i).append(" classe ").append(x.getInterfaceClass()).append(" ep:");
+                      for (int e = 0; e < x.getEndpointCount(); e++) {
+                          UsbEndpoint ep = x.getEndpoint(e);
+                          b.append(ep.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK ? "B" : "O");
+                          b.append(ep.getDirection() == UsbConstants.USB_DIR_OUT ? "out " : "in ");
+                      }
+                      b.append("; ");
+                  }
+                  return b.toString();
+              }
+
               private void askPermission(UsbDevice d) {
                   int flags = Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0;
                   Intent it = new Intent(ACTION_USB);
                   it.setPackage(getPackageName());
                   usb.requestPermission(d, PendingIntent.getBroadcast(this, 0, it, flags));
               }
-          
+
               private synchronized String send(byte[] data) {
                   UsbDevice d = findPrinter();
                   if (d == null) return "Impressora não encontrada. Confira o cabo e se ela está ligada.";
@@ -246,33 +287,35 @@ jobs:
                       askPermission(d);
                       return "Toque em OK pra liberar a impressora e imprima de novo.";
                   }
-                  UsbInterface itf = null;
-                  UsbEndpoint out = null;
-                  for (int i = 0; i < d.getInterfaceCount() && out == null; i++) {
-                      UsbInterface x = d.getInterface(i);
-                      UsbEndpoint ep = findOut(x);
-                      if (ep != null) { itf = x; out = ep; }
-                  }
+                  UsbInterface itf = pickInterface(d);
+                  UsbEndpoint out = findOut(itf);
                   UsbDeviceConnection c = usb.openDevice(d);
                   if (c == null) return "Não consegui abrir a impressora.";
                   try {
                       if (!c.claimInterface(itf, true)) return "A impressora está ocupada.";
                       int off = 0;
                       while (off < data.length) {
-                          int n = Math.min(4096, data.length - off);
+                          int n = Math.min(out.getMaxPacketSize() > 0 ? out.getMaxPacketSize() * 8 : 512, data.length - off);
                           byte[] chunk = new byte[n];
                           System.arraycopy(data, off, chunk, 0, n);
                           int r = c.bulkTransfer(out, chunk, n, 5000);
-                          if (r <= 0) return "Falha ao enviar pra impressora.";
+                          if (r <= 0) {
+                              String m = "Falha ao enviar (" + off + " de " + data.length + " bytes). " + describe(d);
+                              toast(m);
+                              return m;
+                          }
                           off += r;
+                          try { Thread.sleep(5); } catch (InterruptedException ignored) { }
                       }
+                      try { Thread.sleep(400); } catch (InterruptedException ignored) { }
                       c.releaseInterface(itf);
+                      toast("Enviado " + off + " bytes. " + describe(d));
                       return "ok";
                   } finally {
                       c.close();
                   }
               }
-          
+
               public class Bridge {
                   @JavascriptInterface
                   public String print(String b64) {
@@ -282,14 +325,14 @@ jobs:
                           return "Erro: " + e.getMessage();
                       }
                   }
-          
+
                   @JavascriptInterface
                   public String status() {
                       UsbDevice d = findPrinter();
                       if (d == null) return "none";
                       return usb.hasPermission(d) ? "ok" : "noperm";
                   }
-          
+
                   @JavascriptInterface
                   public void requestPermission() {
                       UsbDevice d = findPrinter();
