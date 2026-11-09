@@ -23,6 +23,21 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Atualizar o app
+        run: |
+          cat > /tmp/patch.json <<'XEOF'
+          [["   ${st.print==='app'?`<button class=\"btn dark\" data-act=\"appPerm\">Permitir acesso à impressora</button>`:''}", "   ${st.print==='app'?`<button class=\"btn dark\" data-act=\"appPerm\">Permitir acesso à impressora</button>`:''}\n   ${st.print==='app'&&APP?`<div class=\"field\"><span class=\"label\">Diagnóstico da impressora</span><pre id=\"diag\" style=\"white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.4;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;margin:0;font-family:var(--f-mono)\">${esc(diagText())}</pre><div class=\"two\"><button class=\"btn\" data-act=\"diagTxt\">Teste só texto</button><button class=\"btn\" data-act=\"diagRef\">Atualizar</button></div></div>`:''}"], ["function appPrint(L){", "function diagText(){try{return window.AndroidPrinter.info()}catch(e){return 'Erro: '+e.message}}\nfunction diagShow(r){const el=document.getElementById('diag');if(el)el.textContent=(r?'Resultado: '+r+'\\n\\n':'')+diagText()}\nfunction appPrint(L){"], ["    if(m==='app'){const r=appPrint(L);toast(r==='ok'?label+' impressa':r);updatePill();return r}", "    if(m==='app'){const r=appPrint(L);toast(r==='ok'?label+' enviada':r);updatePill();diagShow(r);return r}"], ["  if(a==='appPerm'){", "  if(a==='diagTxt'){let r;try{r=window.AndroidPrinter.printText('TESTE SIMPLES\\nCentral do Cuscuz\\n1234567890')}catch(e){r='Erro: '+e.message}diagShow(r);return}\n  if(a==='diagRef'){diagShow('');return}\n  if(a==='appPerm'){"], ["data-act=\"reprint\" data-v=\"${o.id}\">Comanda</button></span></div>", "data-act=\"reprint\" data-v=\"${o.id}\">Comanda</button>${delPending===o.id?`<button class=\"btn danger\" style=\"padding:6px 10px;font-size:13px;background:var(--danger);color:#fff\" data-act=\"delYes\" data-v=\"${o.id}\">Confirmar</button>`:`<button class=\"btn danger\" style=\"padding:6px 10px;font-size:13px\" data-act=\"delOrder\" data-v=\"${o.id}\" aria-label=\"Excluir pedido\">Excluir</button>`}</span></div>${delPending===o.id?`<div class=\"note\" style=\"color:var(--danger)\">Excluir o pedido ${esc(ordLabel(o))}? Toque em Confirmar. Isso não pode ser desfeito.</div>`:''}"], ["let payMesa=null,payTotal=0,payTitle='';", "let payMesa=null,payTotal=0,payTitle='',delPending=null;"], ["  if(a==='contaDetail')return openConta(v);", "  if(a==='contaDetail'){delPending=null;return openConta(v)}\n  if(a==='delOrder'){const o=S.orders.find(o=>o.id===v);if(!o)return;delPending=v;openConta(keyOf(o));return}\n  if(a==='delYes'){const o=S.orders.find(o=>o.id===v);if(!o)return;const k=keyOf(o);S.orders=S.orders.filter(x=>x.id!==v);delPending=null;save();render();if(ordersByKey(k).length)openConta(k);else closeSheet();toast('Pedido '+ordLabel(o)+' excluído');return}"], ["  if(a==='mesaDetail')return openMesa(+v);", "  if(a==='mesaDetail'){delPending=null;return openMesa(+v)}"], ["function ticketKitchen(o){return ticketBody(o,false)}", "function ticketKitchen(o){return ticketBody({...o,items:o.items.filter(l=>!catOf(l.cat).bar)},false)}"], ["  if(atd){sendToKitchen(o);toast('Pedido enviado');return}", "  const barOnly=o.items.every(l=>catOf(l.cat).bar);\n  if(barOnly&&!atd){toast('Lançado na conta · '+placeName(o));return}\n  if(atd){sendToKitchen(o);toast(barOnly?'Bebida enviada pro caixa':'Pedido enviado');return}"], ["'Enviar pra cozinha'+(S.settings.autoPrint?' e imprimir':'')", "(cart.length&&cart.every(l=>catOf(l.cat).bar)?(S.settings.role==='atendente'?'Enviar pro caixa (bebida)':'Lançar na conta (não vai pra cozinha)'):'Enviar pra cozinha'+(S.settings.autoPrint?' e imprimir':''))"], ["S.settings.code&&o.kitchen!=='impresso'?", "S.settings.code&&o.kitchen&&o.kitchen!=='impresso'?"]]
+          XEOF
+          python3 - <<'XEOF'
+          import json
+          p='.github/workflows/index.html'
+          s=open(p,encoding='utf-8').read()
+          for a,b in json.load(open('/tmp/patch.json',encoding='utf-8')):
+              if a in s and b not in s: s=s.replace(a,b,1)
+          open(p,'w',encoding='utf-8').write(s)
+          print('ok', 'diagText' in s)
+          XEOF
+
       - name: Montar o projeto Android
         run: |
           A=android/app/src/main
@@ -158,6 +173,7 @@ jobs:
               private static final String ACTION_USB = "br.com.comanda.cuscuz.USB_PERMISSION";
               private static final String START = "https://appassets.androidplatform.net/assets/index.html";
               private WebView web;
+              private volatile String last = "nenhuma impressão ainda";
               private UsbManager usb;
 
               @Override
@@ -202,6 +218,15 @@ jobs:
                   web.addJavascriptInterface(new Bridge(), "AndroidPrinter");
                   if (savedInstanceState != null) web.restoreState(savedInstanceState);
                   else web.loadUrl(START);
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  try {
+                      UsbDevice d = findPrinter();
+                      if (d != null && !usb.hasPermission(d)) askPermission(d);
+                  } catch (Exception ignored) { }
               }
 
               @Override
@@ -293,6 +318,7 @@ jobs:
                   if (c == null) return "Não consegui abrir a impressora.";
                   try {
                       if (!c.claimInterface(itf, true)) return "A impressora está ocupada.";
+                      if (Build.VERSION.SDK_INT >= 21) { try { c.setInterface(itf); } catch (Exception ignored) { } }
                       int off = 0;
                       while (off < data.length) {
                           int n = Math.min(out.getMaxPacketSize() > 0 ? out.getMaxPacketSize() * 8 : 512, data.length - off);
@@ -301,7 +327,7 @@ jobs:
                           int r = c.bulkTransfer(out, chunk, n, 5000);
                           if (r <= 0) {
                               String m = "Falha ao enviar (" + off + " de " + data.length + " bytes). " + describe(d);
-                              toast(m);
+                              last = m;
                               return m;
                           }
                           off += r;
@@ -309,7 +335,7 @@ jobs:
                       }
                       try { Thread.sleep(400); } catch (InterruptedException ignored) { }
                       c.releaseInterface(itf);
-                      toast("Enviado " + off + " bytes. " + describe(d));
+                      last = "Enviado " + off + " de " + data.length + " bytes pela " + describe(d);
                       return "ok";
                   } finally {
                       c.close();
@@ -324,6 +350,34 @@ jobs:
                       } catch (Exception e) {
                           return "Erro: " + e.getMessage();
                       }
+                  }
+
+                  @JavascriptInterface
+                  public String printText(String text) {
+                      try {
+                          return send((text + "\n\n\n\n\n").getBytes("US-ASCII"));
+                      } catch (Exception e) {
+                          return "Erro: " + e.getMessage();
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public String info() {
+                      StringBuilder b = new StringBuilder();
+                      int n = 0;
+                      for (UsbDevice d : usb.getDeviceList().values()) {
+                          n++;
+                          b.append("Aparelho ").append(n).append(": ").append(describe(d))
+                           .append(usb.hasPermission(d) ? " [liberado]" : " [SEM permissão]").append("\n");
+                      }
+                      if (n == 0) b.append("Nenhum aparelho USB encontrado. Confira cabo, adaptador e se a impressora está ligada.\n");
+                      UsbDevice p = findPrinter();
+                      if (p != null) {
+                          UsbInterface itf = pickInterface(p);
+                          b.append("Vou usar: interface classe ").append(itf.getInterfaceClass()).append("\n");
+                      }
+                      b.append("Última impressão: ").append(last);
+                      return b.toString();
                   }
 
                   @JavascriptInterface
