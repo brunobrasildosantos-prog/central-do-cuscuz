@@ -1,0 +1,445 @@
+name: Gerar APK v8
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: So a versao mais nova gera o app
+        id: g
+        run: |
+          newest=$(ls .github/workflows/central-v*.yml | sort -V | tail -1)
+          if [ "$newest" = ".github/workflows/central-v8.yml" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "go=0" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/setup-java@v4
+        if: steps.g.outputs.go == '1'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v3
+        if: steps.g.outputs.go == '1'
+        with:
+          gradle-version: '8.7'
+
+      - name: Montar o projeto Android
+        if: steps.g.outputs.go == '1'
+        run: |
+          A=android/app/src/main
+          mkdir -p $A/java/br/com/comanda/cuscuz $A/res/values $A/res/xml $A/assets
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do n=${d%%:*}; s=${d##*:}; mkdir -p $A/res/mipmap-$n; cp .github/workflows/icone.png $A/res/mipmap-$n/ic_launcher.png; done
+          echo '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' | base64 -d | gunzip > $A/assets/index.html
+          grep -q 'printAsync' $A/assets/index.html
+          cp .github/workflows/comanda.keystore android/comanda.keystore
+          cat > android/settings.gradle <<'XEOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "Comanda"
+          include ':app'
+          XEOF
+          cat > android/build.gradle <<'XEOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          XEOF
+          cat > android/gradle.properties <<'XEOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2g
+          XEOF
+          cat > android/app/build.gradle <<'XEOF'
+          plugins { id 'com.android.application' }
+          
+          def vCode = (project.findProperty('versionCode') ?: '1').toString().toInteger()
+          
+          android {
+              namespace 'br.com.comanda.cuscuz'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'br.com.comanda.cuscuz'
+                  minSdk 21
+                  targetSdk 34
+                  versionCode vCode
+                  versionName "2.${vCode}"
+              }
+              signingConfigs {
+                  release {
+                      storeFile file('../comanda.keystore')
+                      storePassword 'comanda123'
+                      keyAlias 'comanda'
+                      keyPassword 'comanda123'
+                  }
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.release
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          
+          dependencies {
+              implementation 'androidx.webkit:webkit:1.11.0'
+          }
+          XEOF
+          cat > $A/AndroidManifest.xml <<'XEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="@string/app_name"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTask"
+                      android:screenOrientation="portrait"
+                      android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+                      </intent-filter>
+                      <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" android:resource="@xml/device_filter" />
+                  </activity>
+              </application>
+          </manifest>
+          XEOF
+          cat > $A/res/values/strings.xml <<'XEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">Central Cuscuzeira</string>
+          </resources>
+          XEOF
+          cat > $A/res/xml/device_filter.xml <<'XEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <usb-device class="7" />
+          </resources>
+          XEOF
+          cat > $A/java/br/com/comanda/cuscuz/MainActivity.java <<'XEOF'
+          package br.com.comanda.cuscuz;
+
+          import android.app.Activity;
+          import android.app.PendingIntent;
+          import android.content.Intent;
+          import android.hardware.usb.UsbConstants;
+          import android.hardware.usb.UsbDevice;
+          import android.hardware.usb.UsbDeviceConnection;
+          import android.hardware.usb.UsbEndpoint;
+          import android.hardware.usb.UsbInterface;
+          import android.hardware.usb.UsbManager;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.util.Base64;
+          import android.view.WindowManager;
+          import android.widget.Toast;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          import androidx.webkit.WebViewAssetLoader;
+
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
+
+          import org.json.JSONObject;
+
+          public class MainActivity extends Activity {
+              private static final String ACTION_USB = "br.com.comanda.cuscuz.USB_PERMISSION";
+              private static final String START = "https://appassets.androidplatform.net/assets/index.html";
+              private WebView web;
+              private volatile String last = "nenhuma impressão ainda";
+              private UsbManager usb;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  if (Build.VERSION.SDK_INT >= 21) getWindow().setStatusBarColor(0xFFB8770B);
+                  usb = (UsbManager) getSystemService(USB_SERVICE);
+
+                  web = new WebView(this);
+                  setContentView(web);
+                  WebSettings s = web.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+
+                  final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
+                          .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                          .build();
+
+                  web.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                          return loader.shouldInterceptRequest(request.getUrl());
+                      }
+
+                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                          String u = request.getUrl().toString();
+                          if (u.startsWith("https://appassets.androidplatform.net/")) return false;
+                          try {
+                              Intent i = u.startsWith("intent:")
+                                      ? Intent.parseUri(u, Intent.URI_INTENT_SCHEME)
+                                      : new Intent(Intent.ACTION_VIEW, request.getUrl());
+                              startActivity(i);
+                          } catch (Exception ignored) {
+                          }
+                          return true;
+                      }
+                  });
+                  web.addJavascriptInterface(new Bridge(), "AndroidPrinter");
+                  if (savedInstanceState != null) web.restoreState(savedInstanceState);
+                  else web.loadUrl(START);
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  try {
+                      UsbDevice d = findPrinter();
+                      if (d != null && !usb.hasPermission(d)) askPermission(d);
+                  } catch (Exception ignored) { }
+              }
+
+              @Override
+              protected void onSaveInstanceState(Bundle outState) {
+                  super.onSaveInstanceState(outState);
+                  web.saveState(outState);
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (web.canGoBack()) web.goBack();
+                  else super.onBackPressed();
+              }
+
+              private UsbEndpoint findOut(UsbInterface itf) {
+                  for (int e = 0; e < itf.getEndpointCount(); e++) {
+                      UsbEndpoint ep = itf.getEndpoint(e);
+                      if (ep.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK && ep.getDirection() == UsbConstants.USB_DIR_OUT) return ep;
+                  }
+                  return null;
+              }
+
+              private UsbDevice findPrinter() {
+                  UsbDevice any = null;
+                  for (UsbDevice d : usb.getDeviceList().values()) {
+                      for (int i = 0; i < d.getInterfaceCount(); i++) {
+                          UsbInterface itf = d.getInterface(i);
+                          if (findOut(itf) == null) continue;
+                          if (itf.getInterfaceClass() == UsbConstants.USB_CLASS_PRINTER) return d;
+                          if (any == null) any = d;
+                      }
+                  }
+                  return any;
+              }
+
+              private UsbInterface pickInterface(UsbDevice d) {
+                  UsbInterface fallback = null;
+                  for (int i = 0; i < d.getInterfaceCount(); i++) {
+                      UsbInterface x = d.getInterface(i);
+                      if (findOut(x) == null) continue;
+                      if (x.getInterfaceClass() == UsbConstants.USB_CLASS_PRINTER) return x;
+                      if (fallback == null) fallback = x;
+                  }
+                  return fallback;
+              }
+
+              private void toast(final String msg) {
+                  runOnUiThread(new Runnable() {
+                      @Override
+                      public void run() {
+                          Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
+                      }
+                  });
+              }
+
+              private String describe(UsbDevice d) {
+                  StringBuilder b = new StringBuilder();
+                  b.append("VID ").append(d.getVendorId()).append(" PID ").append(d.getProductId()).append(" | ");
+                  for (int i = 0; i < d.getInterfaceCount(); i++) {
+                      UsbInterface x = d.getInterface(i);
+                      b.append("if").append(i).append(" classe ").append(x.getInterfaceClass()).append(" ep:");
+                      for (int e = 0; e < x.getEndpointCount(); e++) {
+                          UsbEndpoint ep = x.getEndpoint(e);
+                          b.append(ep.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK ? "B" : "O");
+                          b.append(ep.getDirection() == UsbConstants.USB_DIR_OUT ? "out " : "in ");
+                      }
+                      b.append("; ");
+                  }
+                  return b.toString();
+              }
+
+              private void askPermission(UsbDevice d) {
+                  int flags = Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0;
+                  Intent it = new Intent(ACTION_USB);
+                  it.setPackage(getPackageName());
+                  usb.requestPermission(d, PendingIntent.getBroadcast(this, 0, it, flags));
+              }
+
+              private synchronized String send(byte[] data) {
+                  UsbDevice d = findPrinter();
+                  if (d == null) return "Impressora não encontrada. Confira o cabo e se ela está ligada.";
+                  if (!usb.hasPermission(d)) {
+                      askPermission(d);
+                      return "Toque em OK pra liberar a impressora e imprima de novo.";
+                  }
+                  UsbInterface itf = pickInterface(d);
+                  UsbEndpoint out = findOut(itf);
+                  UsbDeviceConnection c = usb.openDevice(d);
+                  if (c == null) return "Não consegui abrir a impressora.";
+                  try {
+                      if (!c.claimInterface(itf, true)) return "A impressora está ocupada.";
+                      if (Build.VERSION.SDK_INT >= 21) { try { c.setInterface(itf); } catch (Exception ignored) { } }
+                      int ps = out.getMaxPacketSize() > 0 ? out.getMaxPacketSize() : 64;
+                      byte[] pre = new byte[ps];
+                      for (int q = 0; q + 3 <= ps; q += 3) { pre[q] = 0x1B; pre[q + 1] = 0x21; pre[q + 2] = 0; }
+                      c.bulkTransfer(out, pre, ps, 2000);
+                      try { Thread.sleep(250); } catch (InterruptedException ignored) { }
+                      int off = 0;
+                      while (off < data.length) {
+                          int n = Math.min(out.getMaxPacketSize() > 0 ? out.getMaxPacketSize() : 64, data.length - off);
+                          byte[] chunk = new byte[n];
+                          System.arraycopy(data, off, chunk, 0, n);
+                          int r = c.bulkTransfer(out, chunk, n, 5000);
+                          if (r <= 0) {
+                              String m = "Falha ao enviar (" + off + " de " + data.length + " bytes). " + describe(d);
+                              last = m;
+                              return m;
+                          }
+                          off += r;
+                          try { Thread.sleep(12); } catch (InterruptedException ignored) { }
+                      }
+                      try { Thread.sleep(400); } catch (InterruptedException ignored) { }
+                      c.releaseInterface(itf);
+                      last = "Enviado " + off + " de " + data.length + " bytes pela " + describe(d);
+                      return "ok";
+                  } finally {
+                      c.close();
+                  }
+              }
+
+              private final ExecutorService printPool = Executors.newSingleThreadExecutor();
+
+              public class Bridge {
+                  @JavascriptInterface
+                  public void printAsync(final String b64, final String id) {
+                      printPool.execute(new Runnable() {
+                          @Override
+                          public void run() {
+                              String r;
+                              try {
+                                  r = send(Base64.decode(b64, Base64.DEFAULT));
+                              } catch (Exception e) {
+                                  r = "Erro: " + e.getMessage();
+                              }
+                              final String js = "window.__printDone&&window.__printDone(" + JSONObject.quote(id) + "," + JSONObject.quote(r == null ? "" : r) + ")";
+                              runOnUiThread(new Runnable() {
+                                  @Override
+                                  public void run() {
+                                      try {
+                                          web.evaluateJavascript(js, null);
+                                      } catch (Exception ignored) {
+                                      }
+                                  }
+                              });
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public String print(String b64) {
+                      try {
+                          return send(Base64.decode(b64, Base64.DEFAULT));
+                      } catch (Exception e) {
+                          return "Erro: " + e.getMessage();
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public String printText(String text) {
+                      try {
+                          return send((text + "\n\n\n\n\n").getBytes("US-ASCII"));
+                      } catch (Exception e) {
+                          return "Erro: " + e.getMessage();
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public String info() {
+                      StringBuilder b = new StringBuilder();
+                      int n = 0;
+                      for (UsbDevice d : usb.getDeviceList().values()) {
+                          n++;
+                          b.append("Aparelho ").append(n).append(": ").append(describe(d))
+                           .append(usb.hasPermission(d) ? " [liberado]" : " [SEM permissão]").append("\n");
+                      }
+                      if (n == 0) b.append("Nenhum aparelho USB encontrado. Confira cabo, adaptador e se a impressora está ligada.\n");
+                      UsbDevice p = findPrinter();
+                      if (p != null) {
+                          UsbInterface itf = pickInterface(p);
+                          b.append("Vou usar: interface classe ").append(itf.getInterfaceClass()).append("\n");
+                      }
+                      b.append("Última impressão: ").append(last);
+                      return b.toString();
+                  }
+
+                  @JavascriptInterface
+                  public String status() {
+                      UsbDevice d = findPrinter();
+                      if (d == null) return "none";
+                      return usb.hasPermission(d) ? "ok" : "noperm";
+                  }
+
+                  @JavascriptInterface
+                  public void requestPermission() {
+                      UsbDevice d = findPrinter();
+                      if (d != null && !usb.hasPermission(d)) askPermission(d);
+                  }
+              }
+          }
+          XEOF
+
+      - name: Montar o APK
+        if: steps.g.outputs.go == '1'
+        working-directory: android
+        run: |
+          gradle assembleRelease --no-daemon -PversionCode=$((800 + ${{ github.run_number }}))
+          cp app/build/outputs/apk/release/app-release.apk ../central-do-cuscuz.apk
+
+      - name: Publicar para download
+        if: steps.g.outputs.go == '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: central-8
+          name: Central Cuscuzeira 8
+          files: central-do-cuscuz.apk
+          make_latest: true
